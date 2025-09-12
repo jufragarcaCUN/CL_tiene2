@@ -1,80 +1,61 @@
 # streamlit run dashboard_llamadas_ruta.py
-import os
-import math
+import os, io, math, base64
 from datetime import date
 from typing import Dict, List, Optional
-import base64
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+
 # =========================
-# CONFIG & THEME
+# CONFIG & THEME (debe ser lo primero de Streamlit)
 # =========================
 st.set_page_config(
     page_title="Dashboard de Llamadas de Ventas",
-    #page_icon="📞",
+    # page_icon="📞",
     layout="wide",
 )
+
 # =========================
-# carga de logos 
+# CARGA DE LOGOS
 # =========================
-# La ruta de tu imagen
-# Function to encode the image to Base64
-def encode_image(path):
+def encode_image(path: str):
+    """Devuelve base64 o '', y muestra error solo DESPUÉS de set_page_config."""
     try:
-        with open(path, "rb") as image_file:
-            return base64.b64encode(image_file.read()).decode()
+        with open(path, "rb") as f:
+            return base64.b64encode(f.read()).decode()
     except FileNotFoundError:
-        st.error(f"❌ Error: No se encontró la imagen en: {path}")
+        st.error(f"❌ No se encontró la imagen en: {path}")
         return ""
     except Exception as e:
         st.error(f"❌ Error al cargar la imagen {path}: {e}")
         return ""
 
+# Usa / para rutas en Streamlit Cloud
 cun_path = "Data/cun.png"
 cltiene_path = "Data/cltiene.png"
-
-
-# Encode both images
 encoded_cun = encode_image(cun_path)
 encoded_cltiene = encode_image(cltiene_path)
 
-# Create two columns with equal width
 col1, col2 = st.columns(2)
-
-# Display the first image in the first column (col1)
 with col1:
     if encoded_cun:
         st.markdown(
             f"""
-            <style>
-            .logo {{
-                width: 150px;
-                height: auto;
-            }}
-            </style>
-            <img class="logo" src="data:image/png;base64,{encoded_cun}" alt="Logo Cun">
+            <style>.logo{{width:150px;height:auto;}}</style>
+            <img class="logo" src="data:image/png;base64,{encoded_cun}" alt="Logo CUN">
             """,
             unsafe_allow_html=True
         )
-
-# Display the second image in the second column (col2)
 with col2:
     if encoded_cltiene:
         st.markdown(
             f"""
-            <style>
-            .logo {{
-                width: 150px;
-                height: auto;
-            }}
-            </style>
-            <img class="logo" src="data:image/png;base64,{encoded_cltiene}" alt="Logo Cltiene">
+            <style>.logo{{width:150px;height:auto;}}</style>
+            <img class="logo" src="data:image/png;base64,{encoded_cltiene}" alt="Logo CLtiene">
             """,
             unsafe_allow_html=True
         )
-
 
 CUSTOM_CSS = """
 <style>
@@ -83,11 +64,8 @@ body, .stApp {
 }
 .cun-header {
   background: linear-gradient(90deg, #007A33, #84BD00);
-  color: white;
-  padding: 18px 24px;
-  border-radius: 14px;
-  margin-bottom: 12px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+  color: white; padding: 18px 24px; border-radius: 14px;
+  margin-bottom: 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.15);
 }
 .cun-title { font-size: 28px; font-weight: 800; }
 .cun-subtitle { opacity: 0.95; }
@@ -100,7 +78,7 @@ body, .stApp {
 .dataframe tbody tr:hover { background: rgba(0,122,51,0.06); }
 </style>
 """
-st.write(CUSTOM_CSS, unsafe_allow_html=True)
+st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
 # =========================
 # HELPERS
@@ -113,31 +91,59 @@ def resolve_col(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
     return None
 
 @st.cache_data(show_spinner=False)
-def load_data(default_path: Optional[str] = None) -> pd.DataFrame:
-    """
-    1) Si 'default_path' existe, lee CSV/XLSX de esa ruta.
-    2) Si no existe, permite subir archivo desde la barra lateral.
-    3) Si no hay nada, usa un demo mínimo.
-    """
-    # 1) Ruta por defecto
-    if default_path and os.path.exists(default_path):
-        if default_path.lower().endswith(".csv"):
-            return pd.read_csv(default_path, encoding="utf-8", encoding_errors="ignore")
-        else:
-            # requiere 'openpyxl' instalado
-            return pd.read_excel(default_path)
+def read_from_path(path: str) -> pd.DataFrame:
+    """Carga desde ruta (SIN widgets)."""
+    if not path or not os.path.exists(path):
+        return pd.DataFrame()
+    if path.lower().endswith(".csv"):
+        return pd.read_csv(path, encoding="utf-8", encoding_errors="ignore")
+    return pd.read_excel(path)
 
-    # 2) Subida manual
-    upl = st.sidebar.file_uploader("Sube (.xlsx/.csv)", type=["xlsx", "csv"])
-    if upl is not None:
-        if upl.name.lower().endswith(".xlsx"):
-            return pd.read_excel(upl)
-        else:
-            return pd.read_csv(upl, encoding="utf-8", encoding_errors="ignore")
+@st.cache_data(show_spinner=False)
+def read_from_bytes(content: bytes, ext: str) -> pd.DataFrame:
+    """Carga desde bytes de uploader (SIN widgets)."""
+    bio = io.BytesIO(content)
+    if ext == "csv":
+        return pd.read_csv(bio, encoding="utf-8", encoding_errors="ignore")
+    return pd.read_excel(bio)
 
-    # 3) Demo
+def ensure_schema(df: pd.DataFrame) -> Dict[str, Optional[str]]:
+    m = {}
+    m["fecha"] = resolve_col(df, ["Fecha","fecha","FECHA","Fecha_Llamada","Fecha Llamada","CreatedAt","Date"])
+    m["asesor"] = resolve_col(df, ["Asesor","Agente","Usuario","asesor","Agente_Nombre","Nombre Asesor"])
+    m["tipo"] = resolve_col(df, ["Tipo","Canal","tipo"])
+    m["clasificacion"] = resolve_col(df, ["Clasificación","Clasificacion","class","Categoria","Categoría"])
+    m["puntaje"] = resolve_col(df, ["Puntaje","Puntaje Promedio","Score","Calificacion","Calificación"])
+    m["confianza"] = resolve_col(df, ["Confianza","confidence","Probabilidad","Probabilidad_Pred"])
+    m["subjetividad"] = resolve_col(df, ["Subjetividad","subjectivity","Subj"])
+    m["neutralidad"] = resolve_col(df, ["Neutralidad","neutrality","Neutral"])
+    m["polaridad"] = resolve_col(df, ["Polaridad","polarity","Sentiment","Sentimiento"])
+    m["texto"] = resolve_col(df, ["Transcripcion","Transcripción","Texto","Mensaje","Contenido"])
+    return m
+
+def safe_mean(series: pd.Series) -> float:
+    return float(series.dropna().mean()) if series is not None else float("nan")
+
+# =========================
+# LOAD DATA (widgets FUERA del cache)
+# =========================
+DEFAULT_PATH = "Data/CLtiene.xlsx"  # usa / en Cloud
+
+with st.sidebar:
+    st.markdown("### Origen de datos")
+    ruta_manual = st.text_input("Ruta local (opcional)", value=DEFAULT_PATH,
+                                help="Ej: C:\\carpeta\\archivo.xlsx")
+    upl = st.file_uploader("Sube (.xlsx/.csv)", type=["xlsx", "csv"])
+
+if upl is not None:
+    ext = "xlsx" if upl.name.lower().endswith(".xlsx") else "csv"
+    df_raw = read_from_bytes(upl.getvalue(), ext)
+elif ruta_manual and os.path.exists(ruta_manual):
+    df_raw = read_from_path(ruta_manual)
+else:
+    # Demo mínimo si no hay fuente
     st.info("Cargando un demo mínimo hasta que especifiques una ruta o subas un archivo…")
-    demo = pd.DataFrame({
+    df_raw = pd.DataFrame({
         "Fecha": pd.date_range("2025-01-01", periods=40, freq="D"),
         "Asesor": np.random.choice(["Ana Ruiz","Carlos Pérez","Luisa Fernanda","Juan Díaz","María Gómez","Jorge Rojas"], 40),
         "Tipo": np.random.choice(["Entrante","Saliente"], 40),
@@ -148,34 +154,8 @@ def load_data(default_path: Optional[str] = None) -> pd.DataFrame:
         "Neutralidad": np.random.uniform(0.1, 0.9, 40).round(3),
         "Polaridad": np.random.uniform(-1, 1, 40).round(3),
     })
-    return demo
 
-def ensure_schema(df: pd.DataFrame) -> Dict[str, Optional[str]]:
-    mapping = {}
-    mapping["fecha"] = resolve_col(df, ["Fecha","fecha","FECHA","Fecha_Llamada","Fecha Llamada","CreatedAt","Date"])
-    mapping["asesor"] = resolve_col(df, ["Asesor","Agente","Usuario","asesor","Agente_Nombre","Nombre Asesor"])
-    mapping["tipo"] = resolve_col(df, ["Tipo","Canal","tipo"])
-    mapping["clasificacion"] = resolve_col(df, ["Clasificación","Clasificacion","class","Categoria","Categoría"])
-    mapping["puntaje"] = resolve_col(df, ["Puntaje","Puntaje Promedio","Score","Calificacion","Calificación"])
-    mapping["confianza"] = resolve_col(df, ["Confianza","confidence","Probabilidad","Probabilidad_Pred"])
-    mapping["subjetividad"] = resolve_col(df, ["Subjetividad","subjectivity","Subj"])
-    mapping["neutralidad"] = resolve_col(df, ["Neutralidad","neutrality","Neutral"])
-    mapping["polaridad"] = resolve_col(df, ["Polaridad","polarity","Sentiment","Sentimiento"])
-    mapping["texto"] = resolve_col(df, ["Transcripcion","Transcripción","Texto","Mensaje","Contenido"])
-    return mapping
-
-def safe_mean(series: pd.Series) -> float:
-    return float(series.dropna().mean()) if series is not None else float("nan")
-
-# =========================
-# LOAD DATA (con ruta manual)
-# =========================
-DEFAULT_PATH = r"Data\CLtiene.xlsx"  # <-- CAMBIA ESTA RUTA A LA TUYA
-
-with st.sidebar:
-    st.markdown("### Origen de datos")
-    ruta_manual = st.text_input("Ruta local (opcional)", value=DEFAULT_PATH, help="Ej: C:\\carpeta\\archivo.xlsx")
-df_raw = load_data(ruta_manual.strip() if ruta_manual else DEFAULT_PATH).copy()
+df_raw = df_raw.copy()
 
 # =========================
 # SCHEMA & PREPROCESS
@@ -186,7 +166,6 @@ schema = ensure_schema(df_raw)
 if schema["fecha"]:
     df_raw[schema["fecha"]] = pd.to_datetime(df_raw[schema["fecha"]], errors="coerce")
 else:
-    # Si no hay fecha, fabricar por índice
     df_raw["__Fecha__"] = pd.date_range("2025-01-01", periods=len(df_raw), freq="D")
     schema["fecha"] = "__Fecha__"
 
@@ -195,19 +174,17 @@ for k in ["puntaje","confianza","subjetividad","neutralidad","polaridad"]:
     if schema.get(k):
         df_raw[schema[k]] = pd.to_numeric(df_raw[schema[k]], errors="coerce")
 
-# Intento de sentimiento si falta (opcional)
+# (Opcional) sentiment fallback con TextBlob si está disponible
 try:
     from textblob import TextBlob  # type: ignore
     if (not schema["polaridad"] or df_raw[schema["polaridad"]].isna().all()) and schema["texto"]:
         pol = df_raw[schema["texto"]].astype(str).apply(lambda t: TextBlob(t).sentiment.polarity if t else np.nan)
         colname = schema["polaridad"] or "Polaridad"
-        df_raw[colname] = pol.astype(float)
-        schema["polaridad"] = colname
+        df_raw[colname] = pol.astype(float); schema["polaridad"] = colname
     if (not schema["subjetividad"] or df_raw[schema["subjetividad"]].isna().all()) and schema["texto"]:
         sub = df_raw[schema["texto"]].astype(str).apply(lambda t: TextBlob(t).sentiment.subjectivity if t else np.nan)
         colname = schema["subjetividad"] or "Subjetividad"
-        df_raw[colname] = sub.astype(float)
-        schema["subjetividad"] = colname
+        df_raw[colname] = sub.astype(float); schema["subjetividad"] = colname
 except Exception:
     pass
 
@@ -226,33 +203,26 @@ if not schema["neutralidad"] and schema["polaridad"]:
     df_raw["Neutralidad_sint"] = 1 - np.clip(np.abs(df_raw[schema["polaridad"]]), 0, 1)
     schema["neutralidad"] = "Neutralidad_sint"
 
-# Nombres canónicos de conveniencia
+# Nombres canónicos
 F = schema["fecha"]
 A = schema["asesor"] or "__ASESOR__"
 if A not in df_raw.columns:
     df_raw[A] = "Asesor Desconocido"
 T = schema["tipo"]
 C = schema["clasificacion"]
-
-PUN = schema["puntaje"]
-CON = schema["confianza"]
-SUB = schema["subjetividad"]
-NEU = schema["neutralidad"]
-POL = schema["polaridad"]
+PUN = schema["puntaje"]; CON = schema["confianza"]; SUB = schema["subjetividad"]; NEU = schema["neutralidad"]; POL = schema["polaridad"]
 
 # =========================
-# SIDEBAR FILTERS
+# SIDEBAR: FILTROS
 # =========================
 with st.sidebar:
     st.markdown("### Filtros")
     min_d = pd.to_datetime(df_raw[F]).min()
     max_d = pd.to_datetime(df_raw[F]).max()
-    # Asegurar rango válido
     if isinstance(min_d, pd.Timestamp) and isinstance(max_d, pd.Timestamp) and not pd.isna(min_d) and not pd.isna(max_d):
         default_range = (min_d.date(), max_d.date())
     else:
-        hoy = date.today()
-        default_range = (hoy, hoy)
+        hoy = date.today(); default_range = (hoy, hoy)
     start, end = st.date_input("Rango de fechas", value=default_range)
 
     tipos = sorted([x for x in df_raw[T].dropna().unique()]) if T else []
@@ -291,15 +261,18 @@ def kpi(col, title, value, suffix=""):
     with col:
         st.markdown(f"""<div class="kpi"><h3>{title}</h3><div class="value">{value}{suffix}</div></div>""", unsafe_allow_html=True)
 
+def safe_val(v, fmt):
+    return fmt.format(v) if v == v and not math.isnan(v) else "—"
+
 puntaje_prom = safe_mean(df[PUN]) if PUN and PUN in df.columns else float("nan")
 conf_prom = safe_mean(df[CON])*100 if CON and CON in df.columns else float("nan")
 subj_prom = safe_mean(df[SUB])*100 if SUB and SUB in df.columns else float("nan")
 neut_prom = safe_mean(df[NEU])*100 if NEU and NEU in df.columns else float("nan")
 
-kpi(kpi_cols[0], "Puntaje Promedio", f"{puntaje_prom:,.1f}" if not math.isnan(puntaje_prom) else "—")
-kpi(kpi_cols[1], "Confianza", f"{conf_prom:,.1f}" if not math.isnan(conf_prom) else "—", "%")
-kpi(kpi_cols[2], "Subjetividad", f"{subj_prom:,.1f}" if not math.isnan(subj_prom) else "—", "%")
-kpi(kpi_cols[3], "Neutralidad", f"{neut_prom:,.1f}" if not math.isnan(neut_prom) else "—", "%")
+kpi(kpi_cols[0], "Puntaje Promedio", safe_val(puntaje_prom, "{:,.1f}"))
+kpi(kpi_cols[1], "Confianza",      safe_val(conf_prom, "{:,.1f}"), "%")
+kpi(kpi_cols[2], "Subjetividad",   safe_val(subj_prom, "{:,.1f}"), "%")
+kpi(kpi_cols[3], "Neutralidad",    safe_val(neut_prom, "{:,.1f}"), "%")
 kpi(kpi_cols[4], "Conteo Llamadas", f"{total_llamadas:,}")
 kpi(kpi_cols[5], "Conteo Asesores", f"{total_asesores:,}")
 
@@ -314,13 +287,10 @@ with c1:
     st.markdown("#### Evolución de Indicadores Emocionales en el Tiempo")
     df_ts = df.copy()
     df_ts["__Fecha__"] = pd.to_datetime(df_ts[F]).dt.date
-    agg_cols = {}
-    label_map = {}
+    agg_cols, label_map = {}, {}
     for (col, label) in [(CON,"Confianza"), (SUB,"Subjetividad"), (NEU,"Neutralidad")]:
         if col and col in df_ts.columns:
-            agg_cols[col] = "mean"
-            label_map[col] = label
-
+            agg_cols[col] = "mean"; label_map[col] = label
     if len(agg_cols) == 0:
         st.info("No hay columnas de Confianza/Subjetividad/Neutralidad disponibles para graficar.")
     else:
@@ -363,11 +333,10 @@ with c3:
                  .agg({SUB:"mean", CON:"mean", F:"count"})
                  .reset_index()
                  .rename(columns={SUB:"Subjetividad", CON:"Confianza", F:"Llamadas"}))
-        fig3 = px.scatter(
-            bub, x="Subjetividad", y="Confianza", size="Llamadas", color=A,
-            hover_name=A, size_max=40
-        )
-        fig3.update_layout(height=320, margin=dict(l=10,r=10,t=10,b=10), xaxis_tickformat=".0%", yaxis_tickformat=".0%")
+        fig3 = px.scatter(bub, x="Subjetividad", y="Confianza", size="Llamadas", color=A,
+                          hover_name=A, size_max=40)
+        fig3.update_layout(height=320, margin=dict(l=10,r=10,t=10,b=10),
+                           xaxis_tickformat=".0%", yaxis_tickformat=".0%")
         st.plotly_chart(fig3, use_container_width=True)
 
 with c4:
@@ -389,33 +358,23 @@ with c4:
     tabla = tabla.rename(columns=rename)
 
     for pcol in ["Confianza","Subjetividad","Neutralidad"]:
-        if pcol in tabla.columns:
-            tabla[pcol] = (tabla[pcol]*100).round(2)
-    if "Polaridad" in tabla.columns:
-        tabla["Polaridad"] = tabla["Polaridad"].round(3)
-    if "Llamadas" in tabla.columns:
-        tabla["Llamadas"] = tabla["Llamadas"].astype(int)
+        if pcol in tabla.columns: tabla[pcol] = (tabla[pcol]*100).round(2)
+    if "Polaridad" in tabla.columns: tabla["Polaridad"] = tabla["Polaridad"].round(3)
+    if "Llamadas" in tabla.columns: tabla["Llamadas"] = tabla["Llamadas"].astype(int)
 
     st.dataframe(tabla, use_container_width=True, height=320)
-
-    st.download_button(
-        "⬇️ Descargar tabla por asesor (CSV)",
-        data=tabla.to_csv(index=False).encode("utf-8"),
-        file_name="indicadores_por_asesor.csv",
-        mime="text/csv",
-        use_container_width=True
-    )
-    st.download_button(
-        "⬇️ Descargar datos filtrados (CSV)",
-        data=df.to_csv(index=False).encode("utf-8"),
-        file_name="llamadas_filtradas.csv",
-        mime="text/csv",
-        type="secondary",
-        use_container_width=True
-    )
+    st.download_button("⬇️ Descargar tabla por asesor (CSV)",
+                       data=tabla.to_csv(index=False).encode("utf-8"),
+                       file_name="indicadores_por_asesor.csv", mime="text/csv",
+                       use_container_width=True)
+    st.download_button("⬇️ Descargar datos filtrados (CSV)",
+                       data=df.to_csv(index=False).encode("utf-8"),
+                       file_name="llamadas_filtradas.csv", mime="text/csv",
+                       type="secondary", use_container_width=True)
 
 # =========================
 # FOOTER
 # =========================
 st.markdown("---")
 st.caption("CUN Analytics · Streamlit + Plotly · © 2025")
+
