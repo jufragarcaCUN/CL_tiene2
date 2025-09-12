@@ -8,7 +8,14 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-
+# =========================
+# CONFIG & THEME
+# =========================
+st.set_page_config(
+    page_title="Dashboard de Llamadas de Ventas",
+    #page_icon="📞",
+    layout="wide",
+)
 # =========================
 # carga de logos 
 # =========================
@@ -67,14 +74,7 @@ with col2:
             """,
             unsafe_allow_html=True
         )
-# =========================
-# CONFIG & THEME
-# =========================
-st.set_page_config(
-    page_title="Dashboard de Llamadas de Ventas",
-    #page_icon="📞",
-    layout="wide",
-)
+
 
 CUSTOM_CSS = """
 <style>
