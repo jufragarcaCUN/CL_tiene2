@@ -129,33 +129,7 @@ def safe_mean(series: pd.Series) -> float:
 # =========================
 DEFAULT_PATH = "Data/CLtiene.xlsx"  # usa / en Cloud
 
-with st.sidebar:
-    #st.markdown("### Origen de datos")
-    #ruta_manual = st.text_input("Ruta local (opcional)", value=DEFAULT_PATH,
-                                #lp="Ej: C:\\carpeta\\archivo.xlsx")
-    #upl = st.file_uploader("Sube (.xlsx/.csv)", type=["xlsx", "csv"])
 
-if upl is not None:
-    ext = "xlsx" if upl.name.lower().endswith(".xlsx") else "csv"
-    df_raw = read_from_bytes(upl.getvalue(), ext)
-elif ruta_manual and os.path.exists(ruta_manual):
-    df_raw = read_from_path(ruta_manual)
-else:
-    # Demo mínimo si no hay fuente
-    st.info("Cargando un demo mínimo hasta que especifiques una ruta o subas un archivo…")
-    df_raw = pd.DataFrame({
-        "Fecha": pd.date_range("2025-01-01", periods=40, freq="D"),
-        "Asesor": np.random.choice(["Ana Ruiz","Carlos Pérez","Luisa Fernanda","Juan Díaz","María Gómez","Jorge Rojas"], 40),
-        "Tipo": np.random.choice(["Entrante","Saliente"], 40),
-        "Clasificación": np.random.choice(["Venta","No Venta","Seguimiento"], 40),
-        "Puntaje": np.random.uniform(50, 100, 40).round(1),
-        "Confianza": np.random.uniform(0.6, 0.98, 40).round(3),
-        "Subjetividad": np.random.uniform(0.05, 0.6, 40).round(3),
-        "Neutralidad": np.random.uniform(0.1, 0.9, 40).round(3),
-        "Polaridad": np.random.uniform(-1, 1, 40).round(3),
-    })
-
-df_raw = df_raw.copy()
 
 # =========================
 # SCHEMA & PREPROCESS
