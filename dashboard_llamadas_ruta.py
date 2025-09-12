@@ -72,7 +72,7 @@ with col2:
 # =========================
 st.set_page_config(
     page_title="Dashboard de Llamadas de Ventas",
-    page_icon="📞",
+    #page_icon="📞",
     layout="wide",
 )
 
