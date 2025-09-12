@@ -170,7 +170,7 @@ def safe_mean(series: pd.Series) -> float:
 # =========================
 # LOAD DATA (con ruta manual)
 # =========================
-DEFAULT_PATH = r"CLtiene.xlsx"  # <-- CAMBIA ESTA RUTA A LA TUYA
+DEFAULT_PATH = r"Data\CLtiene.xlsx"  # <-- CAMBIA ESTA RUTA A LA TUYA
 
 with st.sidebar:
     st.markdown("### Origen de datos")
