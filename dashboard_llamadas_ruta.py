@@ -128,6 +128,17 @@ def safe_mean(series: pd.Series) -> float:
 # LOAD DATA (widgets FUERA del cache)
 # =========================
 DEFAULT_PATH = "Data/CLtiene.xlsx"  # usa / en Cloud
+# --- Carga fija del dataset (sin UI) ---
+df_raw = read_from_path(DEFAULT_PATH)
+
+# Si no se encontró el archivo, corta la app con un mensaje claro
+if df_raw.empty:
+    st.error(f"No se encontró el archivo de datos en: {DEFAULT_PATH}. "
+             "Verifica que exista en el repo con el mismo nombre y ruta (mayúsculas/minúsculas).")
+    st.stop()
+
+df_raw = df_raw.copy()
+
 
 
 
