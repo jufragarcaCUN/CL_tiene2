@@ -130,7 +130,9 @@ def safe_mean(series: pd.Series) -> float:
 DEFAULT_PATH = "Data/CLtiene.xlsx"  # usa / en Cloud
 
 with st.sidebar:
-   
+    st.markdown("### Origen de datos")
+    ruta_manual = st.text_input("Ruta local (opcional)", value=DEFAULT_PATH,
+                                help="Ej: C:\\carpeta\\archivo.xlsx")
     upl = st.file_uploader("Sube (.xlsx/.csv)", type=["xlsx", "csv"])
 
 if upl is not None:
@@ -375,4 +377,3 @@ with c4:
 # =========================
 st.markdown("---")
 st.caption("CUN Analytics · Streamlit + Plotly · © 2025")
-
