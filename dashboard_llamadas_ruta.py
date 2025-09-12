@@ -25,9 +25,9 @@ def encode_image(path):
         st.error(f"❌ Error al cargar la imagen {path}: {e}")
         return ""
 
-# Paths for both images
-cun_path = r"Data\cun.png"
-cltiene_path = r"Data\cltiene.png"
+cun_path = "Data/cun.png"
+cltiene_path = "Data/cltiene.png"
+
 
 # Encode both images
 encoded_cun = encode_image(cun_path)
