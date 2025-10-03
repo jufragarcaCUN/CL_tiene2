@@ -2,6 +2,7 @@
 import os, io, math, base64
 from datetime import date, timedelta
 from typing import Dict, List, Optional
+
 import numpy as np
 import pandas as pd
 import plotly.express as px
@@ -18,7 +19,7 @@ st.set_page_config(
 # =========================
 # CARGA DE LOGOS
 # =========================
-def encode_image(path: str):
+def encode_image(path: str) -> str:
     try:
         with open(path, "rb") as f:
             return base64.b64encode(f.read()).decode()
@@ -42,7 +43,7 @@ with col1:
             <style>.logo{{width:150px;height:auto;}}</style>
             <img class="logo" src="data:image/png;base64,{encoded_cun}" alt="Logo CUN">
             """,
-            unsafe_allow_html=True
+            unsafe_allow_html=True,
         )
 with col2:
     if encoded_cltiene:
@@ -51,7 +52,7 @@ with col2:
             <style>.logo{{width:150px;height:auto;}}</style>
             <img class="logo" src="data:image/png;base64,{encoded_cltiene}" alt="Logo CLtiene">
             """,
-            unsafe_allow_html=True
+            unsafe_allow_html=True,
         )
 
 CUSTOM_CSS = """
@@ -83,8 +84,9 @@ st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 def resolve_col(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
     cols = {c.lower(): c for c in df.columns}
     for cand in candidates:
-        if cand.lower() in cols:
-            return cols[cand.lower()]
+        lc = cand.lower()
+        if lc in cols:
+            return cols[lc]
     return None
 
 @st.cache_data(show_spinner=False)
@@ -119,6 +121,9 @@ def ensure_schema(df: pd.DataFrame) -> Dict[str, Optional[str]]:
 def safe_mean(series: pd.Series) -> float:
     return float(series.dropna().mean()) if series is not None else float("nan")
 
+def to_percent(x: pd.Series) -> pd.Series:
+    return (x * 100).round(2)
+
 # =========================
 # LOAD DATA
 # =========================
@@ -126,7 +131,7 @@ DEFAULT_PATH = "Data/CLtiene3-octubre-1"
 df_raw = read_from_path(DEFAULT_PATH)
 
 if df_raw.empty:
-    st.error(f"No se encontró el archivo de datos en: {DEFAULT_PATH}. Verifica que exista en el repo con el mismo nombre y ruta.")
+    st.error(f"No se encontró el archivo de datos en: {DEFAULT_PATH}. Verifica nombre y ruta.")
     st.stop()
 
 df_raw = df_raw.copy()
@@ -135,16 +140,23 @@ df_raw = df_raw.copy()
 # SCHEMA & PREPROCESS
 # =========================
 schema = ensure_schema(df_raw)
+
+# Normaliza nombres de columnas del DF
 df_raw.columns = df_raw.columns.str.strip().str.lower()
 
+# Normaliza valores del schema a minúsculas para alinear con el DF
+schema = {k: (v.lower() if isinstance(v, str) else v) for k, v in schema.items()}
+
+# Fecha
 if schema.get("fecha"):
-    col_fecha = schema["fecha"].lower()
+    col_fecha = schema["fecha"]
     df_raw[col_fecha] = pd.to_datetime(df_raw[col_fecha], errors="coerce")
 else:
-    df_raw["__fecha__"] = pd.date_range("2025-01-01", periods=len(df_raw), freq="D")
-    schema["fecha"] = "__fecha__"
     col_fecha = "__fecha__"
+    df_raw[col_fecha] = pd.date_range("2025-01-01", periods=len(df_raw), freq="D")
+    schema["fecha"] = col_fecha
 
+# Default range (si solo hay un día, fuerza rango de 2 días para evitar retorno escalar)
 s_fecha = df_raw[col_fecha].dropna()
 if not s_fecha.empty:
     min_d = s_fecha.min().date()
@@ -156,44 +168,66 @@ else:
     hoy = date.today()
     default_range = (hoy - timedelta(days=7), hoy)
 
-for k in ["puntaje","confianza","subjetividad","neutralidad","polaridad"]:
-    if schema.get(k):
-        df_raw[schema[k]] = pd.to_numeric(df_raw[schema[k]], errors="coerce")
+# Numéricos
+for k in ["puntaje", "confianza", "subjetividad", "neutralidad", "polaridad"]:
+    col = schema.get(k)
+    if col and col in df_raw.columns:
+        df_raw[col] = pd.to_numeric(df_raw[col], errors="coerce")
+
+# Nombres canónicos
+F = schema["fecha"]
+A = schema["asesor"] or "__asesor__"
+if A not in df_raw.columns:
+    df_raw[A] = "Asesor Desconocido"
+T = schema.get("tipo")
+C = schema.get("clasificacion")
+PUN = schema.get("puntaje")
+CON = schema.get("confianza")
+SUB = schema.get("subjetividad")
+NEU = schema.get("neutralidad")
+POL = schema.get("polaridad")
 
 # =========================
 # SIDEBAR: FILTROS
 # =========================
-F = schema["fecha"]
-A = schema["asesor"] or "__ASESOR__"
-if A not in df_raw.columns:
-    df_raw[A] = "Asesor Desconocido"
-T = schema["tipo"]
-C = schema["clasificacion"]
-PUN = schema["puntaje"]; CON = schema["confianza"]; SUB = schema["subjetividad"]; NEU = schema["neutralidad"]; POL = schema["polaridad"]
-
 with st.sidebar:
     st.markdown("### Filtros")
 
-    date_range = st.date_input("Rango de fechas", value=default_range)
-    if isinstance(date_range, tuple) and len(date_range) == 2:
-        start, end = date_range
-    else:
-        start = date_range
-        end = date_range
+    # NUNCA desempaquetar directamente; manejar ambos casos (date o rango)
+    date_widget = st.date_input(
+        "Rango de fechas",
+        value=default_range,
+        key="rango_fechas",
+        min_value=default_range[0],
+        max_value=default_range[1],
+    )
 
-    tipos = sorted([x for x in df_raw[T].dropna().unique()]) if T else []
+    if isinstance(date_widget, (list, tuple)) and len(date_widget) == 2:
+        start, end = date_widget[0], date_widget[1]
+    else:
+        start = date_widget
+        end = date_widget
+
+    tipos = sorted([x for x in df_raw[T].dropna().unique()]) if T and T in df_raw.columns else []
     tipo_sel = st.multiselect("Tipo", tipos, default=tipos if tipos else [])
 
     asesores = sorted([x for x in df_raw[A].dropna().unique()])
     asesores_sel = st.multiselect("Asesor", asesores, default=asesores)
 
-    clas = sorted([x for x in df_raw[C].dropna().unique()]) if C else []
+    clas = sorted([x for x in df_raw[C].dropna().unique()]) if C and C in df_raw.columns else []
     clas_sel = st.multiselect("Clasificación", clas, default=clas if clas else [])
 
-mask = (pd.to_datetime(df_raw[F]).dt.date >= start) & (pd.to_datetime(df_raw[F]).dt.date <= end)
-if T and len(tipo_sel) > 0: mask &= df_raw[T].isin(tipo_sel)
-if C and len(clas_sel) > 0: mask &= df_raw[C].isin(clas_sel)
-if len(asesores_sel) > 0: mask &= df_raw[A].isin(asesores_sel)
+# Filtro principal
+fecha_series = pd.to_datetime(df_raw[F], errors="coerce")
+mask = (fecha_series.dt.date >= start) & (fecha_series.dt.date <= end)
+
+if T and T in df_raw.columns and len(tipo_sel) > 0:
+    mask &= df_raw[T].isin(tipo_sel)
+if C and C in df_raw.columns and len(clas_sel) > 0:
+    mask &= df_raw[C].isin(clas_sel)
+if len(asesores_sel) > 0:
+    mask &= df_raw[A].isin(asesores_sel)
+
 df = df_raw.loc[mask].copy()
 
 # =========================
@@ -205,7 +239,8 @@ st.markdown(
       <div class="cun-title">Dashboard de Llamadas de Ventas</div>
       <div class="cun-subtitle">Periodo: <b>{start.strftime('%Y-%m-%d')}</b> → <b>{end.strftime('%Y-%m-%d')}</b></div>
     </div>
-    """, unsafe_allow_html=True
+    """,
+    unsafe_allow_html=True,
 )
 
 # =========================
@@ -215,17 +250,21 @@ total_llamadas = len(df)
 total_asesores = df[A].nunique()
 
 kpi_cols = st.columns(6, gap="small")
+
 def kpi(col, title, value, suffix=""):
     with col:
-        st.markdown(f"""<div class="kpi"><h3>{title}</h3><div class="value">{value}{suffix}</div></div>""", unsafe_allow_html=True)
+        st.markdown(
+            f"""<div class="kpi"><h3>{title}</h3><div class="value">{value}{suffix}</div></div>""",
+            unsafe_allow_html=True,
+        )
 
 def safe_val(v, fmt):
     return fmt.format(v) if v == v and not math.isnan(v) else "—"
 
 puntaje_prom = safe_mean(df[PUN]) if PUN and PUN in df.columns else float("nan")
-conf_prom = safe_mean(df[CON])*100 if CON and CON in df.columns else float("nan")
-subj_prom = safe_mean(df[SUB])*100 if SUB and SUB in df.columns else float("nan")
-neut_prom = safe_mean(df[NEU])*100 if NEU and NEU in df.columns else float("nan")
+conf_prom = safe_mean(df[CON]) * 100 if CON and CON in df.columns else float("nan")
+subj_prom = safe_mean(df[SUB]) * 100 if SUB and SUB in df.columns else float("nan")
+neut_prom = safe_mean(df[NEU]) * 100 if NEU and NEU in df.columns else float("nan")
 
 kpi(kpi_cols[0], "Puntaje Promedio", safe_val(puntaje_prom, "{:,.1f}"))
 kpi(kpi_cols[1], "Confianza", safe_val(conf_prom, "{:,.1f}"), "%")
@@ -237,10 +276,127 @@ kpi(kpi_cols[5], "Conteo Asesores", f"{total_asesores:,}")
 st.markdown(" ")
 
 # =========================
-# (Gráficas y tablas siguen igual que antes…)
+# ROW 1: Evolución temporal + Barras por asesor
 # =========================
-# Aquí irían tus gráficas de evolución temporal, barras, bubble chart y tabla
+c1, c2 = st.columns((1.15, 1), gap="large")
 
+with c1:
+    st.markdown("#### Evolución de Indicadores Emocionales en el Tiempo")
+    df_ts = df.copy()
+    df_ts["__fecha__plot"] = pd.to_datetime(df_ts[F], errors="coerce").dt.date
+    agg_cols, label_map = {}, {}
+    for (col, label) in [(CON, "Confianza"), (SUB, "Subjetividad"), (NEU, "Neutralidad")]:
+        if col and col in df_ts.columns:
+            agg_cols[col] = "mean"
+            label_map[col] = label
+    if len(agg_cols) == 0:
+        st.info("No hay columnas de Confianza/Subjetividad/Neutralidad disponibles para graficar.")
+    else:
+        ts = df_ts.groupby("__fecha__plot").agg(agg_cols).reset_index().rename(columns=label_map)
+        ts_long = ts.melt(id_vars="__fecha__plot", var_name="Indicador", value_name="Valor")
+        fig = px.line(ts_long, x="__fecha__plot", y="Valor", color="Indicador", markers=True)
+        fig.update_layout(height=300, margin=dict(l=10, r=10, t=10, b=10))
+        st.plotly_chart(fig, use_container_width=True)
+
+with c2:
+    st.markdown("#### Desempeño y Polaridad Promedio por Asesor")
+    agg_cols = {}
+    if PUN and PUN in df.columns:
+        agg_cols[PUN] = "mean"
+    if POL and POL in df.columns:
+        agg_cols[POL] = "mean"
+    if len(agg_cols) == 0:
+        st.info("No hay columnas de Puntaje/Polaridad disponibles para graficar.")
+    else:
+        per_asesor = df.groupby(A).agg(agg_cols).reset_index()
+        by_field = list(agg_cols.keys())[0]
+        per_asesor = per_asesor.sort_values(by=by_field, ascending=False).head(8)
+        rename_map = {}
+        if PUN in per_asesor.columns:
+            rename_map[PUN] = "Puntaje"
+        if POL in per_asesor.columns:
+            rename_map[POL] = "Polaridad"
+        per_asesor = per_asesor.rename(columns=rename_map)
+        long_bars = per_asesor.melt(id_vars=A, var_name="Métrica", value_name="Valor")
+        fig2 = px.bar(long_bars, x=A, y="Valor", color="Métrica", barmode="group")
+        fig2.update_layout(height=300, margin=dict(l=10, r=10, t=10, b=10), xaxis_title="Asesor")
+        st.plotly_chart(fig2, use_container_width=True)
+
+# =========================
+# ROW 2: Bubble chart + Tabla
+# =========================
+c3, c4 = st.columns((1, 1.1), gap="large")
+
+with c3:
+    st.markdown("#### Relación de Subjetividad y Confianza por Asesor")
+    if not all([col and col in df.columns for col in [SUB, CON]]):
+        st.info("No hay columnas suficientes para este gráfico (se requieren Subjetividad y Confianza).")
+    else:
+        bub = (
+            df.groupby(A)
+            .agg({SUB: "mean", CON: "mean", F: "count"})
+            .reset_index()
+            .rename(columns={SUB: "Subjetividad", CON: "Confianza", F: "Llamadas"})
+        )
+        fig3 = px.scatter(bub, x="Subjetividad", y="Confianza", size="Llamadas", color=A, hover_name=A, size_max=40)
+        fig3.update_layout(height=320, margin=dict(l=10, r=10, t=10, b=10), xaxis_tickformat=".0%", yaxis_tickformat=".0%")
+        st.plotly_chart(fig3, use_container_width=True)
+
+with c4:
+    st.markdown("#### Indicadores Clave por Asesor")
+    agg = {}
+    if CON and CON in df.columns:
+        agg[CON] = "mean"
+    if SUB and SUB in df.columns:
+        agg[SUB] = "mean"
+    if NEU and NEU in df.columns:
+        agg[NEU] = "mean"
+    if POL and POL in df.columns:
+        agg[POL] = "mean"
+    agg[F] = "count"
+
+    tabla = df.groupby(A).agg(agg).reset_index()
+    rename = {}
+    if CON and CON in tabla.columns:
+        rename[CON] = "Confianza"
+    if SUB and SUB in tabla.columns:
+        rename[SUB] = "Subjetividad"
+    if NEU and NEU in tabla.columns:
+        rename[NEU] = "Neutralidad"
+    if POL and POL in tabla.columns:
+        rename[POL] = "Polaridad"
+    rename[F] = "Llamadas"
+    tabla = tabla.rename(columns=rename)
+
+    for pcol in ["Confianza", "Subjetividad", "Neutralidad"]:
+        if pcol in tabla.columns:
+            tabla[pcol] = to_percent(tabla[pcol])
+    if "Polaridad" in tabla.columns:
+        tabla["Polaridad"] = tabla["Polaridad"].round(3)
+    if "Llamadas" in tabla.columns:
+        tabla["Llamadas"] = tabla["Llamadas"].astype(int)
+
+    st.dataframe(tabla, use_container_width=True, height=320)
+    st.download_button(
+        "⬇️ Descargar tabla por asesor (CSV)",
+        data=tabla.to_csv(index=False).encode("utf-8"),
+        file_name="indicadores_por_asesor.csv",
+        mime="text/csv",
+        use_container_width=True,
+    )
+    st.download_button(
+        "⬇️ Descargar datos filtrados (CSV)",
+        data=df.to_csv(index=False).encode("utf-8"),
+        file_name="llamadas_filtradas.csv",
+        mime="text/csv",
+        type="secondary",
+        use_container_width=True,
+    )
+
+# =========================
+# FOOTER
+# =========================
 st.markdown("---")
 st.caption("CUN Analytics · Streamlit + Plotly · © 2025")
+
 
