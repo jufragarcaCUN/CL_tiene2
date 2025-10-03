@@ -141,13 +141,9 @@ df_raw = df_raw.copy()
 # =========================
 schema = ensure_schema(df_raw)
 
-# Normaliza nombres de columnas del DF
 df_raw.columns = df_raw.columns.str.strip().str.lower()
-
-# Normaliza valores del schema a minúsculas para alinear con el DF
 schema = {k: (v.lower() if isinstance(v, str) else v) for k, v in schema.items()}
 
-# Fecha
 if schema.get("fecha"):
     col_fecha = schema["fecha"]
     df_raw[col_fecha] = pd.to_datetime(df_raw[col_fecha], errors="coerce")
@@ -156,7 +152,6 @@ else:
     df_raw[col_fecha] = pd.date_range("2025-01-01", periods=len(df_raw), freq="D")
     schema["fecha"] = col_fecha
 
-# Default range (si solo hay un día, fuerza rango de 2 días para evitar retorno escalar)
 s_fecha = df_raw[col_fecha].dropna()
 if not s_fecha.empty:
     min_d = s_fecha.min().date()
@@ -168,13 +163,11 @@ else:
     hoy = date.today()
     default_range = (hoy - timedelta(days=7), hoy)
 
-# Numéricos
-for k in ["puntaje", "confianza", "subjetividad", "neutralidad", "polaridad"]:
+for k in ["puntaje","confianza","subjetividad","neutralidad","polaridad"]:
     col = schema.get(k)
     if col and col in df_raw.columns:
         df_raw[col] = pd.to_numeric(df_raw[col], errors="coerce")
 
-# Nombres canónicos
 F = schema["fecha"]
 A = schema["asesor"] or "__asesor__"
 if A not in df_raw.columns:
@@ -193,10 +186,9 @@ POL = schema.get("polaridad")
 with st.sidebar:
     st.markdown("### Filtros")
 
-    # NUNCA desempaquetar directamente; manejar ambos casos (date o rango)
     date_widget = st.date_input(
         "Rango de fechas",
-        value=default_range,
+        value=(default_range[0], default_range[1]),
         key="rango_fechas",
         min_value=default_range[0],
         max_value=default_range[1],
@@ -217,17 +209,14 @@ with st.sidebar:
     clas = sorted([x for x in df_raw[C].dropna().unique()]) if C and C in df_raw.columns else []
     clas_sel = st.multiselect("Clasificación", clas, default=clas if clas else [])
 
-# Filtro principal
 fecha_series = pd.to_datetime(df_raw[F], errors="coerce")
 mask = (fecha_series.dt.date >= start) & (fecha_series.dt.date <= end)
-
 if T and T in df_raw.columns and len(tipo_sel) > 0:
     mask &= df_raw[T].isin(tipo_sel)
 if C and C in df_raw.columns and len(clas_sel) > 0:
     mask &= df_raw[C].isin(clas_sel)
 if len(asesores_sel) > 0:
     mask &= df_raw[A].isin(asesores_sel)
-
 df = df_raw.loc[mask].copy()
 
 # =========================
@@ -398,5 +387,6 @@ with c4:
 # =========================
 st.markdown("---")
 st.caption("CUN Analytics · Streamlit + Plotly · © 2025")
+
 
 
