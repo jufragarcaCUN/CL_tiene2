@@ -127,7 +127,7 @@ def safe_mean(series: pd.Series) -> float:
 # =========================
 # LOAD DATA (widgets FUERA del cache)
 # =========================
-DEFAULT_PATH = "Data/CLtiene.xlsx"
+DEFAULT_PATH = "Data/CLtieneP.xlsx"
 
 # --- Carga fija del dataset (sin UI) ---
 df_raw = read_from_path(DEFAULT_PATH)
