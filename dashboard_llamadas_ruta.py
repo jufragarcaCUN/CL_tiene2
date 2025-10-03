@@ -152,6 +152,8 @@ POL = schema.get("polaridad")
 
 with st.sidebar:
     st.markdown("### Filtros")
+    
+    # CORRECCIÓN PRINCIPAL: Manejo seguro de st.date_input
     date_sel = st.date_input(
         "Rango de fechas",
         value=(default_range[0], default_range[1]),
@@ -159,20 +161,20 @@ with st.sidebar:
         max_value=default_range[1],
         key="rango_fechas_v4"
     )
+    
+    # Manejo robusto del retorno de date_input
     if isinstance(date_sel, (tuple, list)) and len(date_sel) == 2:
-        start, end = date_sel[0], date_sel[1]
+        start, end = date_sel
     else:
+        # Si solo se selecciona una fecha, usar esa fecha para ambos
         start = end = date_sel
-    if hasattr(start, "date"):
-        try:
-            start = start.date()
-        except:
-            pass
-    if hasattr(end, "date"):
-        try:
-            end = end.date()
-        except:
-            pass
+        st.warning("Selecciona un rango de fechas completo. Usando misma fecha para inicio y fin.")
+    
+    # Asegurarse de que start y end sean objetos date
+    if hasattr(start, 'date'):
+        start = start.date()
+    if hasattr(end, 'date'):
+        end = end.date()
 
     tipos = sorted([x for x in df_raw[T].dropna().unique()]) if T and T in df_raw.columns else []
     tipo_sel = st.multiselect("Tipo", tipos, default=tipos if tipos else [])
