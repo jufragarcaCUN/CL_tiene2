@@ -1,11 +1,11 @@
 # streamlit run dashboard_llamadas_ruta.py
 import os, io, math, base64
+from datetime import date, timedelta
 from typing import Dict, List, Optional
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import streamlit as st
-from datetime import date, timedelta
 
 # =========================
 # CONFIG & THEME
@@ -95,6 +95,13 @@ def read_from_path(path: str) -> pd.DataFrame:
         return pd.read_csv(path, encoding="utf-8", encoding_errors="ignore")
     return pd.read_excel(path)
 
+@st.cache_data(show_spinner=False)
+def read_from_bytes(content: bytes, ext: str) -> pd.DataFrame:
+    bio = io.BytesIO(content)
+    if ext == "csv":
+        return pd.read_csv(bio, encoding="utf-8", encoding_errors="ignore")
+    return pd.read_excel(bio)
+
 def ensure_schema(df: pd.DataFrame) -> Dict[str, Optional[str]]:
     m = {}
     m["fecha"] = resolve_col(df, ["Fecha","fecha","FECHA","Fecha_Llamada","Fecha Llamada","CreatedAt","Date"])
@@ -119,7 +126,7 @@ DEFAULT_PATH = "Data/CLtiene3-octubre-1"
 df_raw = read_from_path(DEFAULT_PATH)
 
 if df_raw.empty:
-    st.error(f"No se encontró el archivo de datos en: {DEFAULT_PATH}.")
+    st.error(f"No se encontró el archivo de datos en: {DEFAULT_PATH}. Verifica que exista en el repo con el mismo nombre y ruta.")
     st.stop()
 
 df_raw = df_raw.copy()
@@ -166,18 +173,27 @@ PUN = schema["puntaje"]; CON = schema["confianza"]; SUB = schema["subjetividad"]
 
 with st.sidebar:
     st.markdown("### Filtros")
-    start, end = st.date_input("Rango de fechas", value=default_range)
+
+    date_range = st.date_input("Rango de fechas", value=default_range)
+    if isinstance(date_range, tuple) and len(date_range) == 2:
+        start, end = date_range
+    else:
+        start = date_range
+        end = date_range
+
     tipos = sorted([x for x in df_raw[T].dropna().unique()]) if T else []
     tipo_sel = st.multiselect("Tipo", tipos, default=tipos if tipos else [])
+
     asesores = sorted([x for x in df_raw[A].dropna().unique()])
     asesores_sel = st.multiselect("Asesor", asesores, default=asesores)
+
     clas = sorted([x for x in df_raw[C].dropna().unique()]) if C else []
     clas_sel = st.multiselect("Clasificación", clas, default=clas if clas else [])
 
 mask = (pd.to_datetime(df_raw[F]).dt.date >= start) & (pd.to_datetime(df_raw[F]).dt.date <= end)
 if T and len(tipo_sel) > 0: mask &= df_raw[T].isin(tipo_sel)
 if C and len(clas_sel) > 0: mask &= df_raw[C].isin(clas_sel)
-if len(asesores_sel) > 0:   mask &= df_raw[A].isin(asesores_sel)
+if len(asesores_sel) > 0: mask &= df_raw[A].isin(asesores_sel)
 df = df_raw.loc[mask].copy()
 
 # =========================
@@ -192,4 +208,39 @@ st.markdown(
     """, unsafe_allow_html=True
 )
 
-# ... (KPIs y gráficos igual que en tu código, sin cambios de indentación)
+# =========================
+# KPIs
+# =========================
+total_llamadas = len(df)
+total_asesores = df[A].nunique()
+
+kpi_cols = st.columns(6, gap="small")
+def kpi(col, title, value, suffix=""):
+    with col:
+        st.markdown(f"""<div class="kpi"><h3>{title}</h3><div class="value">{value}{suffix}</div></div>""", unsafe_allow_html=True)
+
+def safe_val(v, fmt):
+    return fmt.format(v) if v == v and not math.isnan(v) else "—"
+
+puntaje_prom = safe_mean(df[PUN]) if PUN and PUN in df.columns else float("nan")
+conf_prom = safe_mean(df[CON])*100 if CON and CON in df.columns else float("nan")
+subj_prom = safe_mean(df[SUB])*100 if SUB and SUB in df.columns else float("nan")
+neut_prom = safe_mean(df[NEU])*100 if NEU and NEU in df.columns else float("nan")
+
+kpi(kpi_cols[0], "Puntaje Promedio", safe_val(puntaje_prom, "{:,.1f}"))
+kpi(kpi_cols[1], "Confianza", safe_val(conf_prom, "{:,.1f}"), "%")
+kpi(kpi_cols[2], "Subjetividad", safe_val(subj_prom, "{:,.1f}"), "%")
+kpi(kpi_cols[3], "Neutralidad", safe_val(neut_prom, "{:,.1f}"), "%")
+kpi(kpi_cols[4], "Conteo Llamadas", f"{total_llamadas:,}")
+kpi(kpi_cols[5], "Conteo Asesores", f"{total_asesores:,}")
+
+st.markdown(" ")
+
+# =========================
+# (Gráficas y tablas siguen igual que antes…)
+# =========================
+# Aquí irían tus gráficas de evolución temporal, barras, bubble chart y tabla
+
+st.markdown("---")
+st.caption("CUN Analytics · Streamlit + Plotly · © 2025")
+
