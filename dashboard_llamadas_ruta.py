@@ -150,51 +150,84 @@ SUB = schema.get("subjetividad")
 NEU = schema.get("neutralidad")
 POL = schema.get("polaridad")
 
+# =========================
+#   SIDEBAR + FILTRADO
+# =========================
 with st.sidebar:
     st.markdown("### Filtros")
-    
-    # CORRECCIÓN PRINCIPAL: Manejo seguro de st.date_input
+
     date_sel = st.date_input(
         "Rango de fechas",
         value=(default_range[0], default_range[1]),
         min_value=default_range[0],
         max_value=default_range[1],
-        key="rango_fechas_v4"
+        key="rango_fechas_v4",
     )
-    
-    # Manejo robusto del retorno de date_input
-    if isinstance(date_sel, (tuple, list)) and len(date_sel) == 2:
-        start, end = date_sel
-    else:
-        # Si solo se selecciona una fecha, usar esa fecha para ambos
-        start = end = date_sel
-        st.warning("Selecciona un rango de fechas completo. Usando misma fecha para inicio y fin.")
-    
-    # Asegurarse de que start y end sean objetos date
-    if hasattr(start, 'date'):
-        start = start.date()
-    if hasattr(end, 'date'):
-        end = end.date()
 
-    tipos = sorted([x for x in df_raw[T].dropna().unique()]) if T and T in df_raw.columns else []
+    # --- Normalización ultra robusta del retorno de date_input ---
+    def _to_date(x):
+        if x is None:
+            return None
+        if hasattr(x, "date"):
+            try:
+                return x.date()
+            except:
+                pass
+        return x  # si ya es date
+
+    s = e = None
+    if isinstance(date_sel, (tuple, list)):
+        if len(date_sel) >= 2:
+            s, e = date_sel[0], date_sel[1]
+        elif len(date_sel) == 1:
+            s = e = date_sel[0]
+        else:
+            s = e = None
+    else:
+        s = e = date_sel
+
+    start, end = _to_date(s), _to_date(e)
+
+    # Fallbacks si faltan extremos
+    if start is None:
+        start = default_range[0]
+    if end is None:
+        end = default_range[1]
+
+    # Garantizar orden (start <= end)
+    if start > end:
+        start, end = end, start
+
+    # Mensaje suave si quedó fecha única
+    if start == end:
+        st.info("Usando una sola fecha (inicio = fin). Puedes seleccionar un rango si lo necesitas.")
+
+    # Filtros extra (defensivos)
+    tipos = sorted([x for x in df_raw[T].dropna().unique()]) if T and (T in df_raw.columns) else []
     tipo_sel = st.multiselect("Tipo", tipos, default=tipos if tipos else [])
 
-    asesores = sorted([x for x in df_raw[A].dropna().unique()])
+    asesores = sorted([x for x in df_raw[A].dropna().unique()]) if (A in df_raw.columns) else []
     asesores_sel = st.multiselect("Asesor", asesores, default=asesores)
 
-    clas = sorted([x for x in df_raw[C].dropna().unique()]) if C and C in df_raw.columns else []
+    clas = sorted([x for x in df_raw[C].dropna().unique()]) if C and (C in df_raw.columns) else []
     clas_sel = st.multiselect("Clasificación", clas, default=clas if clas else [])
 
+# --- Aplicación de filtros a los datos ---
 fecha_series = pd.to_datetime(df_raw[F], errors="coerce")
 mask = (fecha_series.dt.date >= start) & (fecha_series.dt.date <= end)
-if T and T in df_raw.columns and len(tipo_sel) > 0:
+
+if T and (T in df_raw.columns) and tipo_sel:
     mask &= df_raw[T].isin(tipo_sel)
-if C and C in df_raw.columns and len(clas_sel) > 0:
+if C and (C in df_raw.columns) and clas_sel:
     mask &= df_raw[C].isin(clas_sel)
-if len(asesores_sel) > 0:
+if (A in df_raw.columns) and asesores_sel:
     mask &= df_raw[A].isin(asesores_sel)
+
 df = df_raw.loc[mask].copy()
 
+# =========================
+#   HEADER + KPIs
+# =========================
 st.markdown(
     f"""
     <div class="cun-header">
@@ -230,6 +263,9 @@ kpi(kpi_cols[5], "Conteo Asesores", f"{total_asesores:,}")
 
 st.markdown(" ")
 
+# =========================
+#   GRÁFICAS
+# =========================
 c1, c2 = st.columns((1.15, 1), gap="large")
 
 with c1:
