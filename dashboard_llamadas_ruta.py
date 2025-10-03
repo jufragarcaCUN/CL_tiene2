@@ -145,14 +145,31 @@ df_raw = df_raw.copy()
 # =========================
 # SCHEMA & PREPROCESS
 # =========================
-schema = ensure_schema(df_raw)
+import pandas as pd
+from datetime import date, timedelta
 
-# Parse fecha
-if schema["fecha"]:
-    df_raw[schema["fecha"]] = pd.to_datetime(df_raw[schema["fecha"]], errors="coerce")
+schema = ensure_schema(df_raw)
+df_raw.columns = df_raw.columns.str.strip().str.lower()
+
+if schema.get("fecha"):
+    col_fecha = schema["fecha"].lower()
+    df_raw[col_fecha] = pd.to_datetime(df_raw[col_fecha], errors="coerce")
 else:
-    df_raw["__Fecha__"] = pd.date_range("2025-01-01", periods=len(df_raw), freq="D")
-    schema["fecha"] = "__Fecha__"
+    df_raw["__fecha__"] = pd.date_range("2025-01-01", periods=len(df_raw), freq="D")
+    schema["fecha"] = "__fecha__"
+    col_fecha = "__fecha__"
+
+s_fecha = df_raw[col_fecha].dropna()
+if not s_fecha.empty:
+    min_d = s_fecha.min().date()
+    max_d = s_fecha.max().date()
+    default_range = (min_d, max_d)
+else:
+    hoy = date.today()
+    default_range = (hoy - timedelta(days=7), hoy)
+
+start, end = st.date_input("Rango de fechas", value=default_range)
+
 
 # A numérico
 for k in ["puntaje","confianza","subjetividad","neutralidad","polaridad"]:
