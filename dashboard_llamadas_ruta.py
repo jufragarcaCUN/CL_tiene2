@@ -8,26 +8,13 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-# =========================
-# CONFIG & THEME
-# =========================
-st.set_page_config(
-    page_title="Dashboard de Llamadas de Ventas",
-    layout="wide",
-)
+st.set_page_config(page_title="Dashboard de Llamadas de Ventas", layout="wide")
 
-# =========================
-# CARGA DE LOGOS
-# =========================
 def encode_image(path: str) -> str:
     try:
         with open(path, "rb") as f:
             return base64.b64encode(f.read()).decode()
-    except FileNotFoundError:
-        st.error(f"❌ No se encontró la imagen en: {path}")
-        return ""
-    except Exception as e:
-        st.error(f"❌ Error al cargar la imagen {path}: {e}")
+    except:
         return ""
 
 cun_path = "Data/cun.png"
@@ -55,7 +42,8 @@ with col2:
             unsafe_allow_html=True,
         )
 
-CUSTOM_CSS = """
+st.markdown(
+    """
 <style>
 body, .stApp {
   background: radial-gradient(circle at 1px 1px, rgba(0,0,0,0.05) 1px, transparent 1px) 0 0 / 24px 24px;
@@ -75,12 +63,10 @@ body, .stApp {
             box-shadow: 0 2px 10px rgba(0,0,0,0.08); border: 1px solid rgba(0,0,0,0.05); }
 .dataframe tbody tr:hover { background: rgba(0,122,51,0.06); }
 </style>
-"""
-st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
-# =========================
-# HELPERS
-# =========================
 def resolve_col(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
     cols = {c.lower(): c for c in df.columns}
     for cand in candidates:
@@ -96,13 +82,6 @@ def read_from_path(path: str) -> pd.DataFrame:
     if path.lower().endswith(".csv"):
         return pd.read_csv(path, encoding="utf-8", encoding_errors="ignore")
     return pd.read_excel(path)
-
-@st.cache_data(show_spinner=False)
-def read_from_bytes(content: bytes, ext: str) -> pd.DataFrame:
-    bio = io.BytesIO(content)
-    if ext == "csv":
-        return pd.read_csv(bio, encoding="utf-8", encoding_errors="ignore")
-    return pd.read_excel(bio)
 
 def ensure_schema(df: pd.DataFrame) -> Dict[str, Optional[str]]:
     m = {}
@@ -124,23 +103,14 @@ def safe_mean(series: pd.Series) -> float:
 def to_percent(x: pd.Series) -> pd.Series:
     return (x * 100).round(2)
 
-# =========================
-# LOAD DATA
-# =========================
 DEFAULT_PATH = "Data/CLtiene3-octubre-1"
 df_raw = read_from_path(DEFAULT_PATH)
-
 if df_raw.empty:
-    st.error(f"No se encontró el archivo de datos en: {DEFAULT_PATH}. Verifica nombre y ruta.")
+    st.error(f"No se encontró el archivo de datos en: {DEFAULT_PATH}.")
     st.stop()
-
 df_raw = df_raw.copy()
 
-# =========================
-# SCHEMA & PREPROCESS
-# =========================
 schema = ensure_schema(df_raw)
-
 df_raw.columns = df_raw.columns.str.strip().str.lower()
 schema = {k: (v.lower() if isinstance(v, str) else v) for k, v in schema.items()}
 
@@ -164,9 +134,9 @@ else:
     default_range = (hoy - timedelta(days=7), hoy)
 
 for k in ["puntaje","confianza","subjetividad","neutralidad","polaridad"]:
-    col = schema.get(k)
-    if col and col in df_raw.columns:
-        df_raw[col] = pd.to_numeric(df_raw[col], errors="coerce")
+    colk = schema.get(k)
+    if colk and colk in df_raw.columns:
+        df_raw[colk] = pd.to_numeric(df_raw[colk], errors="coerce")
 
 F = schema["fecha"]
 A = schema["asesor"] or "__asesor__"
@@ -180,25 +150,29 @@ SUB = schema.get("subjetividad")
 NEU = schema.get("neutralidad")
 POL = schema.get("polaridad")
 
-# =========================
-# SIDEBAR: FILTROS
-# =========================
 with st.sidebar:
     st.markdown("### Filtros")
-
-    date_widget = st.date_input(
+    date_sel = st.date_input(
         "Rango de fechas",
         value=(default_range[0], default_range[1]),
-        key="rango_fechas",
         min_value=default_range[0],
         max_value=default_range[1],
+        key="rango_fechas_v4"
     )
-
-    if isinstance(date_widget, (list, tuple)) and len(date_widget) == 2:
-        start, end = date_widget[0], date_widget[1]
+    if isinstance(date_sel, (tuple, list)) and len(date_sel) == 2:
+        start, end = date_sel[0], date_sel[1]
     else:
-        start = date_widget
-        end = date_widget
+        start = end = date_sel
+    if hasattr(start, "date"):
+        try:
+            start = start.date()
+        except:
+            pass
+    if hasattr(end, "date"):
+        try:
+            end = end.date()
+        except:
+            pass
 
     tipos = sorted([x for x in df_raw[T].dropna().unique()]) if T and T in df_raw.columns else []
     tipo_sel = st.multiselect("Tipo", tipos, default=tipos if tipos else [])
@@ -219,9 +193,6 @@ if len(asesores_sel) > 0:
     mask &= df_raw[A].isin(asesores_sel)
 df = df_raw.loc[mask].copy()
 
-# =========================
-# HEADER
-# =========================
 st.markdown(
     f"""
     <div class="cun-header">
@@ -232,20 +203,13 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# =========================
-# KPIs
-# =========================
 total_llamadas = len(df)
 total_asesores = df[A].nunique()
 
 kpi_cols = st.columns(6, gap="small")
-
 def kpi(col, title, value, suffix=""):
     with col:
-        st.markdown(
-            f"""<div class="kpi"><h3>{title}</h3><div class="value">{value}{suffix}</div></div>""",
-            unsafe_allow_html=True,
-        )
+        st.markdown(f"""<div class="kpi"><h3>{title}</h3><div class="value">{value}{suffix}</div></div>""", unsafe_allow_html=True)
 
 def safe_val(v, fmt):
     return fmt.format(v) if v == v and not math.isnan(v) else "—"
@@ -264,9 +228,6 @@ kpi(kpi_cols[5], "Conteo Asesores", f"{total_asesores:,}")
 
 st.markdown(" ")
 
-# =========================
-# ROW 1: Evolución temporal + Barras por asesor
-# =========================
 c1, c2 = st.columns((1.15, 1), gap="large")
 
 with c1:
@@ -311,9 +272,6 @@ with c2:
         fig2.update_layout(height=300, margin=dict(l=10, r=10, t=10, b=10), xaxis_title="Asesor")
         st.plotly_chart(fig2, use_container_width=True)
 
-# =========================
-# ROW 2: Bubble chart + Tabla
-# =========================
 c3, c4 = st.columns((1, 1.1), gap="large")
 
 with c3:
@@ -382,11 +340,5 @@ with c4:
         use_container_width=True,
     )
 
-# =========================
-# FOOTER
-# =========================
 st.markdown("---")
 st.caption("CUN Analytics · Streamlit + Plotly · © 2025")
-
-
-
